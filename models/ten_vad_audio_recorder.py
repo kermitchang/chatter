@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import numpy as np
 import pyaudio
@@ -6,12 +7,15 @@ import wave
 
 from .base_vad_audio_recorder import BaseVadAudioRecorder
 
+# 添加 ten-vad 本地模組路徑
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../sample/ten-vad/include")))
+
 try:
     from ten_vad import TenVad
     TEN_VAD_AVAILABLE = True
 except ImportError:
     TEN_VAD_AVAILABLE = False
-    print("⚠️  TEN-VAD 未安裝，請運行: pip install git+https://huggingface.co/TEN-framework/ten-vad")
+    print("⚠️  找不到 ten_vad.py，請確認 sample/ten-vad/include/ 目錄存在")
 
 class TenVadAudioRecorder(BaseVadAudioRecorder):
     def __init__(self, sample_rate=16000, frame_size=512, threshold=0.5, on_speech_end=None, 
@@ -19,10 +23,11 @@ class TenVadAudioRecorder(BaseVadAudioRecorder):
         super().__init__(sample_rate, frame_size, threshold, on_speech_end)
         
         if not TEN_VAD_AVAILABLE:
-            raise ImportError("TEN-VAD 未安裝，請執行: pip install git+https://huggingface.co/TEN-framework/ten-vad")
+            raise ImportError("找不到 ten_vad.py，請確認 sample/ten-vad/include/ 目錄存在")
         
-        # TEN-VAD 初始化
-        self.vad = TenVad()
+        # TEN-VAD 初始化 - 參考範例的方式
+        self.hop_size = 256  # 16 ms per frame at 16kHz
+        self.vad = TenVad(self.hop_size, threshold)
         
         # 音頻設定
         self.audio = pyaudio.PyAudio()
@@ -44,40 +49,38 @@ class TenVadAudioRecorder(BaseVadAudioRecorder):
         self.speech_start_time = 0
         self.silence_start_time = 0
         
-        # 音頻緩衝
-        self.audio_buffer = np.array([], dtype=np.float32)
+        # 音頻緩衝 - 改用 int16 格式配合 TEN-VAD
+        self.audio_buffer_int16 = np.array([], dtype=np.int16)
         
     def _is_speech_detected(self, audio_data):
         """使用 TEN-VAD 檢測語音"""
         try:
-            # 確保音頻數據為 16kHz, float32 格式
+            # 確保音頻數據為正確格式
             if isinstance(audio_data, bytes):
                 # 從 bytes 轉換為 numpy array
-                audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+                audio_array = np.frombuffer(audio_data, dtype=np.int16)
             else:
                 audio_array = audio_data
             
-            # TEN-VAD 需要足夠的音頻數據進行檢測
             # 添加到緩衝區
-            self.audio_buffer = np.concatenate([self.audio_buffer, audio_array])
+            if not hasattr(self, 'audio_buffer_int16'):
+                self.audio_buffer_int16 = np.array([], dtype=np.int16)
             
-            # 確保有足夠的數據進行檢測（至少 512 樣本）
-            min_samples = 512
-            if len(self.audio_buffer) < min_samples:
+            self.audio_buffer_int16 = np.concatenate([self.audio_buffer_int16, audio_array])
+            
+            # 確保有足夠的數據進行檢測（至少 hop_size 樣本）
+            if len(self.audio_buffer_int16) < self.hop_size:
                 return False
             
-            # 使用 TEN-VAD 進行檢測
-            speech_probs = self.vad(self.audio_buffer)
+            # 使用 TEN-VAD 的 process 方法進行檢測 - 參考範例
+            audio_chunk = self.audio_buffer_int16[:self.hop_size]
+            out_probability, out_flag = self.vad.process(audio_chunk)
             
-            # 計算平均語音概率
-            avg_prob = np.mean(speech_probs) if len(speech_probs) > 0 else 0.0
+            # 移除已處理的數據
+            self.audio_buffer_int16 = self.audio_buffer_int16[self.hop_size:]
             
-            # 清理緩衝區（保留最新的數據）
-            if len(self.audio_buffer) > min_samples * 2:
-                self.audio_buffer = self.audio_buffer[-min_samples:]
-            
-            # 根據閾值判斷是否為語音
-            is_speech = avg_prob > self.threshold
+            # 根據 flag 直接判斷是否為語音（範例中的做法）
+            is_speech = bool(out_flag)
             
             return is_speech
             
@@ -124,7 +127,7 @@ class TenVadAudioRecorder(BaseVadAudioRecorder):
         self.is_recording = True
         self.is_speaking = False
         self.speech_frames = []
-        self.audio_buffer = np.array([], dtype=np.float32)
+        self.audio_buffer_int16 = np.array([], dtype=np.int16)
         self.recording_start_time = time.time()
         
         stream = self.audio.open(
