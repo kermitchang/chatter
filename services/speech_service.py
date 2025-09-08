@@ -5,6 +5,7 @@ import speech_recognition as sr
 from models.config import SpeechConfig
 from models.silero_vad_audio_recorder import SileroVadAudioRecorder
 from models.webrtc_vad_audio_recorder import WebrtcVadAudioRecorder
+from models.ten_vad_audio_recorder import TenVadAudioRecorder
 
 class SpeechService:
     """
@@ -30,6 +31,9 @@ class SpeechService:
             'vad_type': 'silero',
             'webrtc_aggressiveness': 3,
             'webrtc_frame_size': 320,
+            'tenvad_min_silence_duration': 0.5,
+            'tenvad_min_speech_duration': 0.25,
+            'tenvad_frame_size': 512,
             'sample_rate': 16000,
             'threshold': 0.5,
             'no_speech_timeout': 8.0
@@ -43,6 +47,9 @@ class SpeechService:
                     'vad_type': vad_section.get('vad_type', default_config['vad_type']),
                     'webrtc_aggressiveness': vad_section.getint('webrtc_aggressiveness', default_config['webrtc_aggressiveness']),
                     'webrtc_frame_size': vad_section.getint('webrtc_frame_size', default_config['webrtc_frame_size']),
+                    'tenvad_min_silence_duration': vad_section.getfloat('tenvad_min_silence_duration', default_config['tenvad_min_silence_duration']),
+                    'tenvad_min_speech_duration': vad_section.getfloat('tenvad_min_speech_duration', default_config['tenvad_min_speech_duration']),
+                    'tenvad_frame_size': vad_section.getint('tenvad_frame_size', default_config['tenvad_frame_size']),
                     'sample_rate': vad_section.getint('sample_rate', default_config['sample_rate']),
                     'threshold': vad_section.getfloat('threshold', default_config['threshold']),
                     'no_speech_timeout': vad_section.getfloat('no_speech_timeout', default_config['no_speech_timeout'])
@@ -64,6 +71,16 @@ class SpeechService:
                 threshold=self.vad_config['threshold'],
                 on_speech_end=on_speech_end_callback,
                 aggressiveness=self.vad_config['webrtc_aggressiveness']
+            )
+        elif vad_type == 'tenvad':
+            print("🔧 使用 TEN-VAD")
+            return TenVadAudioRecorder(
+                sample_rate=self.vad_config['sample_rate'],
+                frame_size=self.vad_config['tenvad_frame_size'],
+                threshold=self.vad_config['threshold'],
+                on_speech_end=on_speech_end_callback,
+                min_silence_duration=self.vad_config['tenvad_min_silence_duration'],
+                min_speech_duration=self.vad_config['tenvad_min_speech_duration']
             )
         else:  # Default to silero
             print("🔧 使用 Silero VAD")
