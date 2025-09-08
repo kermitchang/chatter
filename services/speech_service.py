@@ -1,8 +1,10 @@
 import os
 import threading
+import configparser
 import speech_recognition as sr
 from models.config import SpeechConfig
 from models.silero_vad_audio_recorder import SileroVadAudioRecorder
+from models.webrtc_vad_audio_recorder import WebrtcVadAudioRecorder
 
 class SpeechService:
     """
@@ -16,6 +18,61 @@ class SpeechService:
         self.recognizer = sr.Recognizer()
         self.microphone = sr.Microphone()
         self.vad_recorder = None
+        self.vad_config = self._load_vad_config()
+    
+    def _load_vad_config(self):
+        """Load VAD configuration from config.ini file."""
+        config = configparser.ConfigParser()
+        config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'vad_config.ini')
+        
+        # Default values
+        default_config = {
+            'vad_type': 'silero',
+            'webrtc_aggressiveness': 3,
+            'webrtc_frame_size': 320,
+            'sample_rate': 16000,
+            'threshold': 0.5,
+            'no_speech_timeout': 8.0
+        }
+        
+        try:
+            config.read(config_path)
+            if 'VAD' in config:
+                vad_section = config['VAD']
+                return {
+                    'vad_type': vad_section.get('vad_type', default_config['vad_type']),
+                    'webrtc_aggressiveness': vad_section.getint('webrtc_aggressiveness', default_config['webrtc_aggressiveness']),
+                    'webrtc_frame_size': vad_section.getint('webrtc_frame_size', default_config['webrtc_frame_size']),
+                    'sample_rate': vad_section.getint('sample_rate', default_config['sample_rate']),
+                    'threshold': vad_section.getfloat('threshold', default_config['threshold']),
+                    'no_speech_timeout': vad_section.getfloat('no_speech_timeout', default_config['no_speech_timeout'])
+                }
+        except Exception as e:
+            print(f"⚠️ 無法讀取 VAD 配置，使用預設值: {e}")
+        
+        return default_config
+    
+    def _create_vad_recorder(self, on_speech_end_callback):
+        """Create VAD recorder based on configuration."""
+        vad_type = self.vad_config['vad_type'].lower()
+        
+        if vad_type == 'webrtc':
+            print(f"🔧 使用 WebRTC VAD (敏感度: {self.vad_config['webrtc_aggressiveness']})")
+            return WebrtcVadAudioRecorder(
+                sample_rate=self.vad_config['sample_rate'],
+                frame_size=self.vad_config['webrtc_frame_size'],
+                threshold=self.vad_config['threshold'],
+                on_speech_end=on_speech_end_callback,
+                aggressiveness=self.vad_config['webrtc_aggressiveness']
+            )
+        else:  # Default to silero
+            print("🔧 使用 Silero VAD")
+            return SileroVadAudioRecorder(
+                sample_rate=self.vad_config['sample_rate'],
+                frame_size=512,  # Silero uses its own frame size
+                threshold=self.vad_config['threshold'],
+                on_speech_end=on_speech_end_callback
+            )
     
     def listen_for_trigger(self) -> str:
         """
@@ -76,8 +133,8 @@ class SpeechService:
                 print(f"⚠️ 語音辨識服務錯誤: {e}")
                 speech_result["text"] = ""
         
-        # Create VAD recorder with callback
-        self.vad_recorder = SileroVadAudioRecorder(on_speech_end=on_speech_end_callback)
+        # Create VAD recorder with callback based on configuration
+        self.vad_recorder = self._create_vad_recorder(on_speech_end_callback)
         
         # Start VAD recording in separate thread
         recording_thread = threading.Thread(target=self.vad_recorder.start_recording)
