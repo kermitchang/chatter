@@ -30,6 +30,9 @@ class ConsoleView(BaseView):
     def display_welcome_message(self, trigger_word: str = "holiday"):
         print(f"🦙 說 '{trigger_word}' 來喚醒 AI，然後使用語音輸入問題，說 'exit' 離開")
     
+    def display_welcome_message_text(self):
+        print("🦙 文字輸入模式：直接輸入問題，輸入 'exit' 離開")
+    
     def display_goodbye_message(self):
         print("👋 再見！")
     

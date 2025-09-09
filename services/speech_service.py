@@ -28,6 +28,7 @@ class SpeechService:
         
         # Default values
         default_config = {
+            'input_mode': 'voice',
             'vad_type': 'silero',
             'webrtc_aggressiveness': 3,
             'webrtc_frame_size': 320,
@@ -41,9 +42,17 @@ class SpeechService:
         
         try:
             config.read(config_path)
+            result_config = default_config.copy()
+            
+            # Load INPUT section
+            if 'INPUT' in config:
+                input_section = config['INPUT']
+                result_config['input_mode'] = input_section.get('input_mode', default_config['input_mode'])
+            
+            # Load VAD section
             if 'VAD' in config:
                 vad_section = config['VAD']
-                return {
+                result_config.update({
                     'vad_type': vad_section.get('vad_type', default_config['vad_type']),
                     'webrtc_aggressiveness': vad_section.getint('webrtc_aggressiveness', default_config['webrtc_aggressiveness']),
                     'webrtc_frame_size': vad_section.getint('webrtc_frame_size', default_config['webrtc_frame_size']),
@@ -53,9 +62,11 @@ class SpeechService:
                     'sample_rate': vad_section.getint('sample_rate', default_config['sample_rate']),
                     'threshold': vad_section.getfloat('threshold', default_config['threshold']),
                     'no_speech_timeout': vad_section.getfloat('no_speech_timeout', default_config['no_speech_timeout'])
-                }
+                })
+            
+            return result_config
         except Exception as e:
-            print(f"⚠️ 無法讀取 VAD 配置，使用預設值: {e}")
+            print(f"⚠️ 無法讀取配置檔案，使用預設值: {e}")
         
         return default_config
     
@@ -171,6 +182,27 @@ class SpeechService:
             self.vad_recorder.cleanup()
         
         return speech_result["text"]
+    
+    def get_text_input(self) -> str:
+        """
+        Get text input directly from user keyboard input.
+        
+        Returns:
+            str: User input text, empty string if no input
+        """
+        try:
+            user_input = input("💭 請輸入您的問題: ").strip()
+            if user_input:
+                print(f"📝 您輸入的問題: {user_input}")
+                return user_input
+            return ""
+        except (EOFError, KeyboardInterrupt):
+            print("\n👋 輸入已取消")
+            return ""
+    
+    def get_input_mode(self) -> str:
+        """Get the configured input mode (voice or text)."""
+        return self.vad_config.get('input_mode', 'voice')
     
     def is_trigger_detected(self, text: str) -> bool:
         """Check if trigger word is present in recognized text."""

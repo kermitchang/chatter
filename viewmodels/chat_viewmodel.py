@@ -29,6 +29,27 @@ class ChatViewModel:
         """Use VAD for Chinese speech input through speech service."""
         return self.speech_service.listen_for_speech_input()
     
+    def get_text_input(self) -> str:
+        """Get text input directly from user through speech service."""
+        return self.speech_service.get_text_input()
+    
+    def get_input_mode(self) -> str:
+        """Get the configured input mode (voice or text)."""
+        return self.speech_service.get_input_mode()
+    
+    def get_user_input(self) -> str:
+        """
+        Get user input based on configured input mode.
+        
+        Returns:
+            str: User input text from either voice or text mode
+        """
+        input_mode = self.get_input_mode()
+        if input_mode.lower() == 'text':
+            return self.get_text_input()
+        else:
+            return self.listen_for_speech_input()
+    
     def is_trigger_detected(self, text: str) -> bool:
         """Check if trigger word was detected in the text."""
         return self.speech_service.is_trigger_detected(text)
